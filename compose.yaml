@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: deltaforce-api
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      APP_DEBUG: "${APP_DEBUG:-false}"
+      DEFAULT_LANG: "${DEFAULT_LANG:-zh-cn}"
+      DB_DRIVER: "${DB_DRIVER:-sqlite}"
+      SQLITE_PATH: "${SQLITE_PATH:-/data/df.db}"
+    volumes:
+      - ./runtime:/var/www/html/runtime
+      - ./data:/data

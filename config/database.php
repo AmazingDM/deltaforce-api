@@ -59,7 +59,7 @@ return [
         ],
         'sqlite' => [
             'type' => 'sqlite',
-            'dsn' => 'sqlite:./df.db',
+            'dsn' => 'sqlite:' . env('SQLITE_PATH', './df.db'),
             'prefix' => 'df_',
         ],
         // 更多的数据库配置信息

@@ -31,6 +31,35 @@ php think run
 http://localhost:8000
 ~~~
 
+## Docker Compose 一键部署
+
+项目默认使用 SQLite，本仓库已提供可直接用于 Linux 的 `compose.yaml` 和 `deploy.sh`。
+
+部署步骤：
+
+~~~
+chmod +x deploy.sh
+./deploy.sh
+~~~
+
+启动完成后访问：
+
+~~~
+http://服务器IP:8000
+~~~
+
+说明：
+
+* 首次执行会自动将 `.example.env` 复制为 `.env`
+* SQLite 数据库文件持久化到 `./data/df.db`
+* 运行缓存目录持久化到 `./runtime`
+
+如果你要改端口或切换 MySQL，直接编辑 `.env` 后重新执行：
+
+~~~
+docker compose up -d --build
+~~~
+
 如果需要更新框架使用
 ~~~
 composer update coolxitech/deltaforce
