@@ -55,7 +55,7 @@ class Wegame
         }
 
         $result = $response->getBody()->getContents();
-        $sig = $this->getCookieValue('qrsig');
+        $sig = getCookieValue($this->cookie, 'qrsig');
         $cookies = $this->cookie->toArray();
         $cookie = [];
         foreach ($cookies as $value) {
@@ -64,8 +64,8 @@ class Wegame
         return Response::json(0, '获取成功', [
             'qrSig' => $sig,
             'image' => base64_encode($result),
-            'token' => $this->getQrToken($sig),
-            'loginSig' => $this->getCookieValue('pt_login_sig'),
+            'token' => getQrToken($sig),
+            'loginSig' => getCookieValue($this->cookie, 'pt_login_sig'),
             'cookie' => $cookie,
         ]);
     }

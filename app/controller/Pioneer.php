@@ -7,25 +7,31 @@ use app\utils\Response;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\CookieJar;
+use GuzzleHttp\Cookie\SetCookie;
 use GuzzleHttp\Exception\BadResponseException;
 use think\facade\Request;
 use think\response\Json;
-class QQSafe
+
+const APPID = 716027609;
+
+class Pioneer
 {
-    protected Client $client;
-    protected CookieJar $cookie;
+    private CookieJar $cookie;
+    private Client $client;
 
     public function __construct()
     {
+        $this->cookie = new CookieJar();
         $curlVersion = curl_version(); // 获取curl版本信息
         $http2Supported = isset($curlVersion['features']) && ($curlVersion['features'] & CURL_VERSION_HTTP2) !== 0; // 判断是否支持http2
         $httpVersion = $http2Supported ? 2.0 : 1.1;
-        $this->cookie = new CookieJar();
         $this->client = new Client([
             'cookies' => $this->cookie,
             'allow_redirects' => false,
             'verify' => false,
             'version' => $httpVersion,
+            'http_errors' => false,
+            'proxy' => 'http://127.0.0.1:9001'
         ]);
     }
 
@@ -36,7 +42,7 @@ class QQSafe
         }
         $response = $this->client->request('GET', 'https://xui.ptlogin2.qq.com/ssl/ptqrshow', [
             'query' => [
-                'appid' => 716027609,
+                'appid' => APPID,
                 'e' => 2,
                 'l' => 'M',
                 's' => 3,
@@ -44,7 +50,7 @@ class QQSafe
                 'v' => 4,
                 't' => 0.6142752744667854,
                 'daid' => 383,
-                'pt_3rd_aid' => 101944512,
+                'pt_3rd_aid' => '101477677',
                 'u1' => 'https://graph.qq.com/oauth2.0/login_jump',
             ],
         ]);
@@ -68,11 +74,11 @@ class QQSafe
         ]);
     }
 
-    public function getLoginToken(): bool
+    private function getLoginToken(): bool
     {
         $response = $this->client->request('GET', 'https://xui.ptlogin2.qq.com/cgi-bin/xlogin', [
             'query' => [
-                'appid' => 716027609,
+                'appid' => APPID,
                 'daid' => 383,
                 'style' => 33,
                 'login_text' => '登录',
@@ -80,8 +86,8 @@ class QQSafe
                 'hide_border' => 1,
                 'target' => 'self',
                 's_url' => 'https://graph.qq.com/oauth2.0/login_jump',
-                'pt_3rd_aid' => 101944512,
-                'pt_feedback_link' => 'https://support.qq.com/products/77942?customInfo=milo.qq.com.appid101491592',
+                'pt_3rd_aid' => '101477677',
+                'pt_feedback_link' => 'https://support.qq.com/products/77942?customInfo=milo.qq.com.appid101477677',
                 'theme' => 2,
                 'verify_theme',
             ],
@@ -89,53 +95,34 @@ class QQSafe
         return $response->getStatusCode() === 200;
     }
 
-    public function getQrToken(string $qrSig): int
-    {
-        $len = strlen($qrSig);
-        $hash = 0;
-        for ($i = 0; $i < $len; $i++) {
-            $hash += (($hash << 5) & 2147483647) + ord($qrSig[$i]) & 2147483647;
-            $hash &= 2147483647;
-        }
-        return $hash & 2147483647;
-    }
-
     public function getAction(string $qrToken, string $qrSig, string $loginSig): Json
     {
         try {
             $cookie = Request::param('cookie');
+            if (str_contains($cookie, '\\')) { // 判断cookie字符串中有转义字符
+                $cookie = stripslashes($cookie); // 去除转义字符
+            }
             if (!$cookie) {
                 return Response::json(-1, '缺少cookie参数');
             }
             $cookies = json_decode($cookie, true);
             $cookies['qrsig'] = $qrSig;
             $this->cookie = $this->cookie::fromArray($cookies, '.ptlogin2.qq.com');
-            $response = $this->client->request('GET', 'https://ssl.ptlogin2.qq.com/ptqrlogin', [
+            $response = $this->client->request('GET', 'https://xui.ptlogin2.qq.com/ssl/ptqrlogin', [
                 'query' => [
                     'u1' => 'https://graph.qq.com/oauth2.0/login_jump',
                     'ptqrtoken' => $qrToken,
-                    'ptredirect' => 0,
-                    'h' => 1,
-                    't' => 1,
-                    'g' => 1,
                     'from_ui' => 1,
-                    'ptlang' => 2052,
-                    'action' => '0-0-1744807890273',
-                    'js_ver' => 25040111,
-                    'js_type' => 1,
                     'login_sig' => $loginSig,
-                    'pt_uistyle' => 40,
-                    'aid' => 716027609,
+                    'aid' => APPID,
                     'daid' => 383,
-                    'pt_3rd_aid' => 101944512,
-                    null,
-                    'o1vId' => '378b06c889d9113b39e814ca627809e3',
-                    'pt_js_version' => '530c3f68',
+                    'pt_3rd_aid' => '101477677',
                 ],
                 'cookies' => $this->cookie,
             ]);
         } catch (BadResponseException $e) {
-            if ($e->getResponse()->getStatusCode()) {
+            $response = $e->getResponse();
+            if ($response->getStatusCode()) {
                 return Response::json(-5, '响应错误');
             }
         }
@@ -166,12 +153,14 @@ class QQSafe
         $q_url = $matches[3];
         preg_match('/uin=(.*?)&/', $q_url, $matches);
         $qq = $matches[1];
-        $access = new Access();
-        $access->qq = $qq;
+        preg_match('/ptsigx=(.*?)&/', $q_url, $matches);
+        $ptsigx = $matches[1];
 
+        // check_sig
         $this->client->request('GET', $q_url, [
             'cookies' => $this->cookie,
         ]);
+
         $cookies = $this->cookie->toArray();
         $t_cookie = [];
         foreach ($cookies as $value) {
@@ -179,8 +168,6 @@ class QQSafe
                 $t_cookie[$value['Name']] = $value['Value'];
             }
         }
-        $access->cookie = json_encode($t_cookie);
-        $access->replace()->save();
         return Response::json(0, '登录成功', [
             'cookie' => $t_cookie,
         ]);
@@ -190,9 +177,8 @@ class QQSafe
     {
         $params = Request::param('cookie');
         if (!$params) {
-            return Response::json(-1, '必须填写cookie参数');
+            return Response::json(-1, 'cookie参数必须填');
         }
-
         if (str_contains($params, '\\')) { // 判断cookie字符串中有转义字符
             $params = stripslashes($params); // 去除转义字符
         }
@@ -202,10 +188,10 @@ class QQSafe
         $response = $this->client->request('POST', 'https://graph.qq.com/oauth2.0/authorize', [
             'form_params' => [
                 'response_type' => 'code',
-                'client_id' => '101944512',
-                'redirect_uri' => 'https://gamesafe.qq.com/login-ui/index.html?cPageName=middle&type=QQ&backUrl=reload&appId=101944512',
-                'scope' => 'all',
-                'state' => 'qqconnect_2',
+                'client_id' => '101477677',
+                'redirect_uri' => 'https://m.gamer.qq.com/v2/passport/qq/callback?url=https%3A%2F%2Fm.gamer.qq.com%2Fv2%2Fhome%2Fmy',
+                'scope' => 'get_user_info',
+                'state' => 'gamer.qq.com',
                 'switch',
                 'form_plogin' => 1,
                 'src' => 1,
@@ -213,10 +199,10 @@ class QQSafe
                 'openapi' => 1010,
                 'g_tk' => getGtk($params['p_skey']),
                 'auth_time' => time(),
-                'ui' => '8414A4DC-B157-42EE-84AE-84477CD7832A',
+                'ui' => '4F384776-3605-4955-B015-DBA77968FC7C',
             ],
             'headers' => [
-                'referer' => 'https://xui.ptlogin2.qq.com/',
+                'referer' => 'https://gamer.qq.com/',
             ],
             'cookies' => $this->cookie,
         ]);
@@ -228,82 +214,118 @@ class QQSafe
         $this->client->request('GET', $response->getHeaderLine('Location'), [
             'cookies' => $this->cookie,
         ]);
-        $response = $this->client->request('GET', 'https://gamesafe.qq.com/connect', [
+        $response = $this->client->request('GET', 'https://gamer.qq.com/v2/passport/qq/callback', [
             'query' => [
                 'code' => $qcCode,
-                'appId' => 101944512,
-                'atype' => 'QQ',
+                'state' => 'gamer.qq.com',
+            ],
+            'cookies' => $this->cookie,
+        ]);
+
+        // login获取鉴权cookie
+        $this->client->request('GET', $response->getHeaderLine('Location'), [
+            'cookies' => $this->cookie,
+        ]);
+        if ($response->getStatusCode() != 302) {
+            return Response::json(-1, 'AccessToken获取失败:'.$response->getStatusCode());
+        }
+
+        $key = getCookieValue($this->cookie, 'key');
+        if (!$key) {
+            return Response::json(-1, 'AccessToken获取失败');
+        }
+        return Response::json(0, '获取成功', [
+            'key' => $key,
+        ]);
+    }
+
+    public function updateAccessToken(): Json
+    {
+        $cookie = Request::param('cookie');
+        if (str_contains($cookie, '\\')) { // 判断cookie字符串中有转义字符
+            $cookie = stripslashes($cookie); // 去除转义字符
+        }
+        $openId = Request::param('openid');
+        $accessToken = Request::param('access_token');
+        $cookies = json_decode($cookie, true);
+        $this->cookie = $this->cookie::fromArray($cookies, '.ptlogin2.qq.com');
+        $response = $this->client->request('POST', 'https://ams.game.qq.com/ams/userLoginSvr', [
+            'query' => [
+                'callback' => 'coolxitech',
+                'acctype' => 'qc',
+                'appid' => APPID,
+                'access_token' => $accessToken,
+                'openid' => $openId,
+                'refresh_token',
+                'ieg_ams_sign' => 'null',
+                'expires_time' => 'null',
+                '_' => getMicroTime(),
             ],
             'cookies' => $this->cookie,
             'headers' => [
-                'referer' => 'https://gamesafe.qq.com/login-ui/index.html',
+                'referer' => 'https://df.qq.com/',
+            ],
+        ]);
+        $result = $response->getBody()->getContents();
+        preg_match('/coolxitech\((.*?)\);/', $result, $matches);
+        $data = json_decode($matches[1], true);
+        if ($data['isLogin'] != 1) {
+            return Response::json(-1, '更新失败');
+        }
+        return Response::json(0, '更新成功');
+    }
+
+    public function getGameTestList(): Json
+    {
+        $key = Request::param('key'); // 可选, 填入后会获取更多数据
+        $type = Request::param('type') ?? 'pc'; // 可选
+        $this->cookie = $this->cookie::fromArray([
+            'key' => $key,
+        ], '.gamer.qq.com');
+
+        $response = $this->client->request('POST', 'https://m.gamer.qq.com/graph/wxmini/GetCollList', [
+            'json' => [
+                'subType' => match ($type) {
+                    'pc', '' => 12,
+                    'mobile' => 22
+                }
             ],
         ]);
         $result = $response->getBody()->getContents();
         $data = json_decode($result, true);
-        if ($data['ret'] != 0) {
-            return Response::json(-1, 'AccessToken获取失败: ' . $data['sMsg']);
+        if ($data['errCode'] != 0) {
+            return Response::json(-1, $data['msg']);
         }
-        $gs_code = $this->cookie->getCookieByName('gs_code')->getValue();
-        $tempText = explode('.', $gs_code)[1];
-        $gs = json_decode(base64_decode($tempText), true);
-        $access_token = $gs['token'];
-        return Response::json(0, '获取成功', [
-            'access_token' => $access_token,
-            'openid' => $this->cookie->getCookieByName('gs_id')->getValue(),
-            'code' => $gs_code,
-        ]);
+        $data = json_decode($data['result']['collList'][0]['content'], true)['list'];
+        if (!$key) {
+            return Response::json(0, 'success', $data);
+        }
+
+        foreach ($data as &$item) {
+            if (preg_match('#/detail/\d+/(\d+)#', $item['szJumpUrl'], $matches)) {
+                $item['detail'] = $this->getGameDetail(key: $key, id: (int) $matches[1]);
+            }
+
+        }
+        return Response::json(0, 'success', $data);
     }
 
-    public function bannedList(): Json
+    private function getGameDetail(string $key, int $id): array
     {
-        $params = Request::only(['openid', 'access_token', 'code']);
-        if (empty($params['openid']) || empty($params['access_token'])) {
-            return Response::json(-1, '缺少参数');
-        }
-        $cookie = createCookie($params['openid'], $params['access_token'], $params['code']);
-        $response = $this->client->request('GET', 'https://gamesafe.qq.com/api/proxy/punish_query', [
+        $this->cookie = $this->cookie::fromArray([
+            'key' => $key,
+        ], '.gamer.qq.com');
+        $response = $this->client->request('GET', 'https://m.gamer.qq.com/task/misc/gettask2', [
             'query' => [
-                'query_type' => 4,
-                'limit' => 10,
+                'iTaskID' => $id,
             ],
-            'cookies'  => $cookie,
+            'cookies' => $this->cookie,
         ]);
         $result = $response->getBody()->getContents();
         $data = json_decode($result, true);
-        return Response::json(0, '获取成功', $data['data']);
-    }
-
-    public function report(): Json
-    {
-        $params = Request::only(['openid', 'access_token', 'user_id']);
-        if (empty($params['openid']) || empty($params['access_token'])) {
-            return Response::json(-1, '缺少参数');
+        if ($data['errCode'] != 0) {
+            return [];
         }
-        $cookie = CookieJar::fromArray([
-            'openid' => $params['openid'],
-            'access_token' => $params['access_token'],
-        ], '.qq.com');
-        $response = $this->client->request('GET', 'https://wx.gamesafe.qq.com/api/plat/user_report', [
-            'query' => [
-                'user_id' => $params['user_id'],
-            ],
-            'headers' => [
-                'user-agent' => 'MicroMessenger',
-            ],
-            'cookies'  => $cookie,
-        ]);
-        $result = $response->getBody()->getContents();
-        $data = json_decode($result, true);
-        if ($data['ret'] != 0) {
-            return Response::json(-1, '获取失败: ' . $data['message']);
-        }
-        return Response::json(0, '获取成功', $data['data']);
-    }
-
-    private function getCookieValue($name)
-    {
-        $cookies = array_column($this->cookie->toArray(), 'Value', 'Name');
-        return $cookies[$name] ?? null;
+        return $data['result'];
     }
 }

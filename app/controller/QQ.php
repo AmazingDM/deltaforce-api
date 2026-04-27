@@ -31,7 +31,7 @@ class QQ
         ]);
     }
 
-    public function getQrSig()
+    public function getQrSig(): Json
     {
         if (!$this->getLoginToken()) {
             throw new Exception('LoginToken获取失败', -1);
@@ -55,7 +55,7 @@ class QQ
         }
 
         $result = $response->getBody()->getContents();
-        $sig = $this->getCookieValue('qrsig');
+        $sig = getCookieValue($this->cookie, 'qrsig');
         $cookies = $this->cookie->toArray();
         $cookie = [];
         foreach ($cookies as $value) {
@@ -64,13 +64,13 @@ class QQ
         return Response::json(0, '获取成功', [
             'qrSig' => $sig,
             'image' => base64_encode($result),
-            'token' => $this->getQrToken($sig),
-            'loginSig' => $this->getCookieValue('pt_login_sig'),
+            'token' => getQrToken($sig),
+            'loginSig' => getCookieValue($this->cookie, 'pt_login_sig'),
             'cookie' => $cookie,
         ]);
     }
 
-    public function getLoginToken(): bool
+    private function getLoginToken(): bool
     {
         $response = $this->client->request('GET', 'https://xui.ptlogin2.qq.com/cgi-bin/xlogin', [
             'query' => [
@@ -89,17 +89,6 @@ class QQ
             ],
         ]);
         return $response->getStatusCode() === 200;
-    }
-
-    public function getQrToken(string $qrSig): int
-    {
-        $len = strlen($qrSig);
-        $hash = 0;
-        for ($i = 0; $i < $len; $i++) {
-            $hash += (($hash << 5) & 2147483647) + ord($qrSig[$i]) & 2147483647;
-            $hash &= 2147483647;
-        }
-        return $hash & 2147483647;
     }
 
     public function getAction(string $qrToken, string $qrSig, string $loginSig): Json
@@ -221,7 +210,7 @@ class QQ
                 'src' => 1,
                 'update_auth' => 1,
                 'openapi' => 1010,
-                'g_tk' => $this->getGtk($params['p_skey']),
+                'g_tk' => getGtk($params['p_skey']),
                 'auth_time' => time(),
                 'ui' => '979D48F3-6CE2-4E95-A789-3BD3187648B6',
             ],
@@ -310,26 +299,4 @@ class QQ
         return Response::json(0, '更新成功');
     }
 
-
-    private function getCookieValue($name)
-    {
-        $cookies = array_column($this->cookie->toArray(), 'Value', 'Name');
-        return $cookies[$name] ?? null;
-    }
-
-    private function getGTK(string $sKey): int
-    {
-        $hash = 5381;
-        $len = strlen($sKey);
-
-        for ($i = 0; $i < $len; $i++) {
-            // Using ord() to get ASCII value similar to charCodeAt()
-            // Left shift and addition operations are the same
-            $hash += ($hash << 5) + ord($sKey[$i]);
-            // Ensure 32-bit integer precision by applying bitwise AND with 0x7fffffff
-            $hash = $hash & 0x7fffffff;
-        }
-
-        return $hash & 0x7fffffff;
-    }
 }
